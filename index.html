@@ -36,7 +36,7 @@
     position: fixed; inset: 0; z-index: 999;
     background: #04081a;
     overflow: hidden;
-    cursor: pointer;
+
   }
   #intro.out { animation: introOut 1s cubic-bezier(0.4,0,1,1) forwards; }
   @keyframes introOut {
@@ -93,15 +93,7 @@
     white-space: nowrap;
   }
 
-  .tap-hint {
-    position:absolute; bottom:5%; left:50%; transform:translateX(-50%);
-    font-size:clamp(9px,2.5vw,11px); letter-spacing:0.3em; text-transform:uppercase;
-    color:rgba(255,255,255,0); pointer-events:none;
-    transition: color 0.5s;
-    white-space: nowrap;
-  }
-  .tap-hint.show { color:rgba(255,255,255,0.45); animation: tapPulse 1.8s ease-in-out infinite; }
-  @keyframes tapPulse { 0%,100%{opacity:.4} 50%{opacity:.85} }
+
 
   .card {
     width: 100%;
@@ -317,7 +309,7 @@
   </div>
   <div id="countdown"></div>
   <div id="phase-label"></div>
-  <div class="tap-hint" id="tap-hint">Appuyer pour passer</div>
+
 </div>
 
 <div class="card">
@@ -477,12 +469,16 @@
   var speedEl   = document.getElementById('hud-speed');
   var cdEl      = document.getElementById('countdown');
   var phaseEl   = document.getElementById('phase-label');
-  var tapEl     = document.getElementById('tap-hint');
   var hudEl     = document.getElementById('hud');
 
   var introDone  = false;
   var introStart = null;
-  var DUR        = 9000;
+  var DUR        = 17000;
+  // Phase boundaries (normalized 0→1)
+  // 0.00 – 0.24  Phase 0 : écran noir mystérieux
+  // 0.24 – 0.46  Phase 1 : intérieur avion
+  // 0.46 – 0.62  Phase 2 : porte + compte à rebours
+  // 0.62 – 1.00  Phase 3 : chute libre
 
   function resizeIntro() { ic.width = window.innerWidth; ic.height = window.innerHeight; }
   resizeIntro();
@@ -502,8 +498,116 @@
     a: 0.1 + Math.random()*0.5, r: 0.5 + Math.random()*1.6,
   }; });
 
+  // Particle field for phase 0
+  var p0particles = Array.from({length: 38}, function() { return {
+    x: Math.random(), y: Math.random(),
+    r: 0.4 + Math.random() * 1.2,
+    vx: (Math.random() - 0.5) * 0.00015,
+    vy: -0.00008 - Math.random() * 0.00012,
+    a: 0.08 + Math.random() * 0.22,
+  }; });
+
+  function drawPhase0(t, W, H) {
+    var p0 = t / 0.24; // 0→1
+
+    // Pure black background
+    ictx.fillStyle = '#000';
+    ictx.fillRect(0, 0, W, H);
+
+    // Drifting star-dust
+    p0particles.forEach(function(p) {
+      p.x += p.vx; p.y += p.vy;
+      if (p.y < -0.01) { p.y = 1.01; p.x = Math.random(); }
+      ictx.beginPath();
+      ictx.arc(p.x * W, p.y * H, p.r, 0, Math.PI * 2);
+      ictx.fillStyle = 'rgba(255,255,255,' + (p.a * Math.min(p0 * 5, 1)) + ')';
+      ictx.fill();
+    });
+
+    // Central icon — envelope with a question mark (gift mystery)
+    var cx = W / 2, cy = H * 0.38;
+    var iconAlpha = p0 < 0.15 ? p0 / 0.15 : p0 > 0.80 ? (1 - (p0 - 0.80) / 0.20) : 1;
+    var iconScale = p0 < 0.15 ? 0.6 + p0 / 0.15 * 0.4 : 1;
+
+    ictx.save();
+    ictx.globalAlpha = iconAlpha;
+    ictx.translate(cx, cy);
+    ictx.scale(iconScale, iconScale);
+
+    // Outer glow
+    var glow = ictx.createRadialGradient(0, 0, 0, 0, 0, 55);
+    glow.addColorStop(0, 'rgba(201,153,58,0.18)');
+    glow.addColorStop(1, 'transparent');
+    ictx.fillStyle = glow;
+    ictx.beginPath(); ictx.arc(0, 0, 55, 0, Math.PI * 2); ictx.fill();
+
+    // Envelope body
+    ictx.strokeStyle = 'rgba(201,153,58,0.75)';
+    ictx.lineWidth = 1.5;
+    ictx.fillStyle = 'rgba(201,153,58,0.06)';
+    var ew = 52, eh = 36;
+    ictx.beginPath();
+    ictx.roundRect(-ew/2, -eh/2, ew, eh, 3);
+    ictx.fill(); ictx.stroke();
+
+    // Envelope flap (V shape)
+    ictx.beginPath();
+    ictx.moveTo(-ew/2, -eh/2);
+    ictx.lineTo(0, 4);
+    ictx.lineTo(ew/2, -eh/2);
+    ictx.strokeStyle = 'rgba(201,153,58,0.55)';
+    ictx.lineWidth = 1.5;
+    ictx.stroke();
+
+    // Question mark inside
+    ictx.font = 'bold 18px serif';
+    ictx.fillStyle = 'rgba(201,153,58,0.85)';
+    ictx.textAlign = 'center';
+    ictx.textBaseline = 'middle';
+    ictx.fillText('?', 0, 8);
+
+    ictx.restore();
+
+    // Text lines — appear one by one
+    var lines = [
+      { text: 'Un cadeau t\'attend.', show: 0.18 },
+      { text: 'Quelque chose d\'unique.', show: 0.38 },
+      { text: 'Quelque chose que tu n\'oublieras jamais.', show: 0.60 },
+    ];
+
+    ictx.textAlign = 'center';
+    ictx.textBaseline = 'middle';
+    var baseY = H * 0.62;
+
+    lines.forEach(function(line, i) {
+      if (p0 < line.show) return;
+      var lineProgress = Math.min((p0 - line.show) / 0.14, 1);
+      var fadeOut = p0 > 0.82 ? (1 - (p0 - 0.82) / 0.18) : 1;
+      var a = lineProgress * fadeOut;
+      var yOff = (1 - lineProgress) * 10;
+
+      ictx.save();
+      ictx.globalAlpha = a;
+      ictx.font = 'italic ' + clamp(13, 3.2, 16, W) + 'px Georgia, serif';
+      ictx.fillStyle = i === 2 ? 'rgba(201,153,58,1)' : 'rgba(255,255,255,0.82)';
+      ictx.letterSpacing = '0.06em';
+      ictx.fillText(line.text, W / 2, baseY + i * clamp(22, 5, 28, W) + yOff);
+      ictx.restore();
+    });
+
+    // Fade to black at end
+    if (p0 > 0.82) {
+      ictx.fillStyle = 'rgba(0,0,0,' + ((p0 - 0.82) / 0.18 * 0.96) + ')';
+      ictx.fillRect(0, 0, W, H);
+    }
+  }
+
+  function clamp(min, vwFactor, max, W) {
+    return Math.min(max, Math.max(min, W * vwFactor / 100));
+  }
+
   function drawPhase1(t, W, H) {
-    var p1 = t / 0.30;
+    var p1 = (t - 0.24) / 0.22;
     ictx.fillStyle = '#080c1e';
     ictx.fillRect(0, 0, W, H);
     var floorY = H * 0.6;
@@ -564,10 +668,21 @@
     phaseEl.textContent = "DANS L'AVION — 3 200 M";
     altEl.textContent  = '3 200';
     speedEl.textContent = Math.round(270 + p1 * 15);
+    // Fade in from black at start of phase 1
+    if (p1 < 0.12) {
+      ictx.fillStyle = 'rgba(0,0,0,' + ((1 - p1/0.12) * 0.95) + ')';
+      ictx.fillRect(0, 0, W, H);
+    }
+    // Fade to black at end of phase 1
+    if (p1 > 0.75) {
+      var fadeOut = (p1 - 0.75) / 0.25;
+      ictx.fillStyle = 'rgba(0,0,0,' + (fadeOut * 0.92) + ')';
+      ictx.fillRect(0, 0, W, H);
+    }
   }
 
   function drawPhase2(t, W, H) {
-    var p2 = (t - 0.30) / 0.32;
+    var p2 = (t - 0.46) / 0.16;
     ictx.fillStyle = '#0a0e22';
     ictx.fillRect(0, 0, W, H);
     var skyG2 = ictx.createLinearGradient(0, 0, 0, H);
@@ -645,6 +760,11 @@
     phaseEl.textContent = p2 > 0.45 ? 'PRÊT — COMPTE À REBOURS' : 'PORTE EN OUVERTURE';
     altEl.textContent  = '3 200';
     speedEl.textContent = Math.round(285 + p2 * 5);
+    // Fade in from black at start of phase 2
+    if (p2 < 0.12) {
+      ictx.fillStyle = 'rgba(0,0,0,' + ((1 - p2/0.12) * 0.92) + ')';
+      ictx.fillRect(0, 0, W, H);
+    }
   }
 
   function drawPhase3(t, W, H) {
@@ -700,7 +820,16 @@
     phaseEl.style.color = 'rgba(255,180,60,' + (Math.min(p3*4,1)*0.9) + ')';
     phaseEl.textContent = 'CHUTE LIBRE';
     altEl.textContent  = Math.max(0, Math.round(3200*(1-p3))).toLocaleString('fr-FR');
-    speedEl.textContent = Math.round(10 + p3*185);
+    // Speed: realistic acceleration curve — 0 → ~200 km/h terminal velocity
+    // Uses sqrt curve: fast initial acceleration, plateaus near terminal
+    var rawSpeed = Math.round(200 * Math.sqrt(Math.min(p3 * 1.4, 1)));
+    speedEl.textContent = Math.min(rawSpeed, 200);
+    // Fade to black at end of phase 3
+    if (p3 > 0.78) {
+      var fadeEnd = (p3 - 0.78) / 0.22;
+      ictx.fillStyle = 'rgba(0,0,0,' + (fadeEnd * 0.97) + ')';
+      ictx.fillRect(0, 0, W, H);
+    }
   }
 
   function drawIntro(ts) {
@@ -708,11 +837,11 @@
     var t = Math.min((ts - introStart) / DUR, 1);
     var W = ic.width, H = ic.height;
     ictx.clearRect(0, 0, W, H);
-    if      (t < 0.30) drawPhase1(t, W, H);
+    if      (t < 0.24) drawPhase0(t, W, H);
+    else if (t < 0.46) drawPhase1(t, W, H);
     else if (t < 0.62) drawPhase2(t, W, H);
     else               drawPhase3(t, W, H);
-    if (t > 0.05) hudEl.classList.add('active');
-    if (t > 0.22) tapEl.classList.add('show');
+    if (t > 0.26) hudEl.classList.add('active');
     if (t >= 1) { dismissIntro(); return; }
     requestAnimationFrame(drawIntro);
   }
@@ -721,12 +850,12 @@
     if (introDone) return;
     introDone = true;
     cdEl.style.opacity = 0;
-    introEl.classList.add('out');
-    setTimeout(function() { introEl.style.display = 'none'; }, 950);
+    setTimeout(function() {
+      introEl.classList.add('out');
+      setTimeout(function() { introEl.style.display = 'none'; }, 1200);
+    }, 1800);
   }
 
-  introEl.addEventListener('click',      dismissIntro);
-  introEl.addEventListener('touchstart', dismissIntro, {passive:true});
   requestAnimationFrame(drawIntro);
 
   // ── CARD scroll reveal ──
