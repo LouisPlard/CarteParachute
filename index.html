@@ -858,14 +858,22 @@
     });
     ictx.filter = 'none';
     var spd = Math.min(p3*3,1);
+    // dirSign: +1 (down) at start, transitions to -1 (up) as speed builds
+    // crossover around p3=0.25 (still slow), fully upward by p3=0.5
+    var dirSign = 1 - 2 * Math.min(Math.max((p3 - 0.12) / 0.30, 0), 1);
     streaks.forEach(function(p) {
-      p.x+=p.vx; p.y+=p.vy*(1+p3*4);
-      if(p.y>1.05){p.y=-0.04;p.x=Math.random();}
-      if(p.x<-0.05||p.x>1.05)p.x=Math.random();
+      // Move particles: downward when dirSign>0, upward when dirSign<0
+      var moveVy = p.vy * (1 + p3 * 4) * dirSign;
+      p.x += p.vx;
+      p.y += moveVy;
+      if (p.y > 1.05) { p.y = -0.04; p.x = Math.random(); }
+      if (p.y < -0.05) { p.y = 1.04; p.x = Math.random(); }
+      if (p.x < -0.05 || p.x > 1.05) p.x = Math.random();
       var len = spd * 10;
       if (len > 1.5) {
+        // Trail direction follows dirSign
         ictx.beginPath(); ictx.moveTo(p.x*W, p.y*H);
-        ictx.lineTo(p.x*W+p.vx*len*W*10, p.y*H-p.vy*len*H*3);
+        ictx.lineTo(p.x*W + p.vx*len*W*10, p.y*H + p.vy*len*H*3*dirSign);
         ictx.strokeStyle='rgba(255,255,255,' + (p.a*spd*0.55) + ')'; ictx.lineWidth=p.r*0.5; ictx.stroke();
       } else {
         ictx.beginPath(); ictx.arc(p.x*W,p.y*H,p.r,0,Math.PI*2);
